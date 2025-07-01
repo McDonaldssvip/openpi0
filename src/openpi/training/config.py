@@ -20,6 +20,8 @@ import openpi.models.tokenizer as _tokenizer
 import openpi.policies.aloha_policy as aloha_policy
 import openpi.policies.droid_policy as droid_policy
 import openpi.policies.libero_policy as libero_policy
+import openpi.policies.realman_policy as realman_policy
+import openpi.policies.ranger_policy as ranger_policy
 import openpi.shared.download as _download
 import openpi.shared.normalize as _normalize
 import openpi.training.droid_rlds_dataset as droid_rlds_dataset
@@ -381,6 +383,78 @@ class RLDSDroidDataConfig(DataConfigFactory):
 
 
 @dataclasses.dataclass(frozen=True)
+class LeRobotRealmanDataConfig(DataConfigFactory):
+    @override
+    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+        repack_transform = _transforms.Group(
+            inputs=[
+                _transforms.RepackTransform(
+                    {
+                        "observation/image": "image",
+                        "observation/wrist_image": "wrist_image",
+                        "observation/state": "state",
+                        "actions": "actions",
+                        "prompt": "prompt",
+                    }
+                )
+            ]
+        )
+        data_transforms = _transforms.Group(
+            inputs=[realman_policy.RealmanInputs(action_dim=model_config.action_dim, model_type=model_config.model_type)],
+            outputs=[realman_policy.RealmanOutputs()],
+        )
+        delta_action_mask = _transforms.make_bool_mask(6, -1, 6, -1)
+        data_transforms = data_transforms.push(
+            inputs=[_transforms.DeltaActions(delta_action_mask)],
+            outputs=[_transforms.AbsoluteActions(delta_action_mask)],
+        )
+
+        model_transforms = ModelTransformFactory()(model_config)
+
+        return dataclasses.replace(
+            self.create_base_config(assets_dirs),
+            repack_transforms=repack_transform,
+            data_transforms=data_transforms,
+            model_transforms=model_transforms,
+        )
+
+@dataclasses.dataclass(frozen=True)
+class LeRobotRangerDataConfig(DataConfigFactory):
+    @override
+    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+        repack_transform = _transforms.Group(
+            inputs=[
+                _transforms.RepackTransform(
+                    {
+                        "observation/image": "image",
+                        "observation/wrist_image": "wrist_image",
+                        "observation/state": "state",
+                        "actions": "actions",
+                        "prompt": "prompt",
+                    }
+                )
+            ]
+        )
+        data_transforms = _transforms.Group(
+            inputs=[ranger_policy.RangerInputs(action_dim=model_config.action_dim, model_type=model_config.model_type)],
+            outputs=[ranger_policy.RangerOutputs()],
+        )
+        delta_action_mask = _transforms.make_bool_mask(6, -1, 6, -4)
+        data_transforms = data_transforms.push(
+            inputs=[_transforms.DeltaActions(delta_action_mask)],
+            outputs=[_transforms.AbsoluteActions(delta_action_mask)],
+        )
+
+        model_transforms = ModelTransformFactory()(model_config)
+
+        return dataclasses.replace(
+            self.create_base_config(assets_dirs),
+            repack_transforms=repack_transform,
+            data_transforms=data_transforms,
+            model_transforms=model_transforms,
+        )
+
+@dataclasses.dataclass(frozen=True)
 class TrainConfig:
     # Name of the config. Must be unique. Will be used to reference this config.
     name: tyro.conf.Suppress[str]
@@ -725,6 +799,38 @@ _CONFIGS = [
         exp_name="debug",
         num_train_steps=10,
         wandb_enabled=False,
+    ),
+    TrainConfig(
+        name="pi0_fast_realman",
+        model=pi0_fast.Pi0FASTConfig(action_dim=14, action_horizon=10,max_token_len=180, paligemma_variant="gemma_2b_lora"),
+        data=LeRobotRealmanDataConfig(
+            repo_id='zzh/realman_transfer_0516',
+            base_config=DataConfig(prompt_from_task=True,),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_fast_base/params"),
+        num_train_steps=10000,
+        save_interval=1000,
+        freeze_filter=pi0_fast.Pi0FASTConfig(
+            action_dim=14, action_horizon=10, max_token_len=180, paligemma_variant="gemma_2b_lora"
+        ).get_freeze_filter(),
+        # Turn off EMA for LoRA finetuning.
+        ema_decay=None,
+    ),
+
+    TrainConfig(
+        name="pi0_fast_ranger",
+        model=pi0_fast.Pi0FASTConfig(action_dim=17, action_horizon=10,max_token_len=180, paligemma_variant="gemma_2b_lora"),
+        data=LeRobotRangerDataConfig(
+            repo_id='zzh/ranger_0613',
+            base_config=DataConfig(prompt_from_task=True,),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_fast_base/params"),
+        num_train_steps=8000,
+        save_interval=1000,
+        freeze_filter=pi0_fast.Pi0FASTConfig(action_dim=17, action_horizon=10, max_token_len=180, paligemma_variant="gemma_2b_lora"
+        ).get_freeze_filter(),
+        # Turn off EMA for LoRA finetuning.
+        ema_decay=None,
     ),
 ]
 
