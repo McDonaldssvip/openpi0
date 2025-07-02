@@ -6,9 +6,6 @@ import numpy as np
 from lerobot.common.datasets.lerobot_dataset import HF_LEROBOT_HOME, LeRobotDataset
 
 def convert(data_dir: Path, repo_id: str, fps: int = 10):
-    outdir = HF_LEROBOT_HOME / repo_id
-    if outdir.exists():
-        shutil.rmtree(outdir)
 
     features = {
         "image": {
@@ -40,7 +37,6 @@ def convert(data_dir: Path, repo_id: str, fps: int = 10):
         features=features,
         image_writer_threads=10,
         image_writer_processes=5,
-        outdir=outdir,
     )
 
     for h5file in sorted(Path(data_dir).glob("episode_*.hdf5")):
@@ -66,12 +62,11 @@ def convert(data_dir: Path, repo_id: str, fps: int = 10):
                 dataset.add_frame(frame)
             dataset.save_episode()
 
-    dataset.consolidate(run_compute_stats=False)
-    print(f"✅ Converted LeRobot dataset saved to directory: {outdir}")
+    print(f"✅ Converted LeRobot dataset saved to directory '{HF_LEROBOT_HOME / repo_id}'")
 
 
 if __name__ == "__main__":
-    DATA_DIR    = Path("/home/airobot/zzh/openpi/data/hdf5_0613")
+    DATA_DIR    = Path("./data/hdf5_0613")
     REPO_ID     = "zzh/ranger_0613"
     FPS         = 10
 
